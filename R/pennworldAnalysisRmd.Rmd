@@ -1,0 +1,490 @@
+---
+title: "Penn World Table Analysis"
+author: "Eli Gacasan"
+date: "2022-11-18"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F)
+```
+Introduction:
+I have a time series economics data set of 170+ countries, from 1950 to 2019. Let's see what happens
+
+Objectives: 
+1. Learn about time series analysis
+
+2. Learn about economics 
+
+3. See if the economic data support my own quote unquote 'knowledge' of history and
+   maybe (very very modestly) answer interesting questions:
+
+  I) In 1973, energy dependence was used as a weapon of war against the US and Europe by some OPEC member states, because 
+     of Western support of Israel. An oil embargo was placed on the US, and a major oil trading hub in the Netherlands. The price 
+     crude oil more than tripled. This was known as the first oil shock. The second oil shock occurred in 1978-1981. (Plan: Visual inspection)
+     
+  II) Russia's economy don't look so hot in the 90s (Plan: Visual inspection)
+  
+  III) China 'catches-up' to the US. (Plan: evaluate with cross-correlation)
+  
+  IV) South America, Africa, don't look so hot either. (Plan: Visual inspection)
+  
+  V) Is there an economic effect of joining/the formation of the EU, NATO, G20, G7, G8, BRICS? (Plan: Perhaps a hypothesis test, )
+  
+  VI) 2008 Financial crash (Visual inspection)
+  
+  VII) 2014 Annexation of Crimea (followed by economic sanctions on Russia)
+  
+  VIII) 1994 Rwandan Genocide (Plan: Visual Inspection)
+  
+  IX) Iraq War, Gulf War, whatever the heck is going on Yemen (Plan: Visual Inspection)
+  
+  X)  Are there any instances in which changes related to oil prices/policy effect the economic measures in the data?
+      Which measures and countries did these changes effect? 
+      
+  XI) Are there any instances in which war effect the economic measures in the data? 
+  
+  
+  Unfortunately, a number of these countries were not included such as Libya, or the Soviet Union, so I've removed some of the above.  
+  
+I will approach the endeavor like I would a child imagining he is a detective. 
+Perhaps there is a goal in mind, perhaps not, and we'll follow the paths most 
+interesting to me. So expect a lack of clarity and completeness that is hopefully
+tolerable. 
+
+Data Sources: 
+
+1. https://econdata.com/databases/imf-and-other-international/penn-world-table/ or from 
+   https://www.rug.nl/ggdc/productivity/pwt/?lang=en 
+   
+About Penn World Table (PWT) version 10.0:
+
+1. Large joint effort developed by economists Robert Summers, Alan Heston, and Irvin Kravis, helped by United Nations staff and many others.
+
+2. This time series data set was inspired by the United Nations International Comparison Programme (ICP), one of the largest and longest statistical projects in the world. PWT is widely used as a source of research to understand economic growth between various countries. Is the data set useful? Apparently some studies have shown different versions of this data set can yield
+'radically' different rankings of country growth and disapprove pre-existing literature [ Source: https://cepr.org/voxeu/columns/recasting-international-income-differences-next-generation-penn-world-table].
+
+3. Data from 1950 to 2019
+
+4. Missing data
+    i) As the year gets closer to 2019 for each
+       country there is less missing data, but not complete for most countries 
+    ii) Some variables are more likely to be consistently missing, no matter the year or country'. 
+        For example, the variable avh (average annual hours worked by persons engaged) tends to be missing
+        at a rate higher than most other variables. 
+
+
+            Penn World Table Users guide [https://www.rug.nl/ggdc/docs/pwt100-user-guide-to-data-files.pdf]
+
+1. Data Introduction
+```{r}
+
+
+library(tidyverse)
+library(astsa)
+library(highcharter)
+library(xts)
+library(lubridate)
+library(shiny)
+library(zoo)
+library(gridExtra)
+library(scales)
+library(purrr)
+library(extrafont)
+library(scales)
+library(timevis)
+
+# Import Data
+pwt <- readxl::read_excel("D:/R-4.0.3/RStudio/RProjects/Projects/Projects/Personal/GIS/pwt100.xlsx",
+                          sheet="Data")
+
+# Filtering: Russian Federation Data
+russia.df <- pwt %>% filter(country == "Russian Federation", year %in% 1990:2019) 
+russia.df
+# Cleaning: Replacing variables with units 'millions of dollars'
+#           with units 'billions of dollars'
+#           
+columns <- c("rgdpe", "rgdpo", "rgdpna",
+             "ccon", "cda", "cgdpe", "cgdpo",
+             "cn", "rconna", "rdana", "rnna")
+billions.Columns <- modify(pwt[,columns],
+                           ~ .x / 1000)
+pwt.billions <- pwt %>% select(-columns) %>%
+  mutate(billions.Columns)
+
+```
+
+
+Problems for solution:
+1. How do economists measure the value of those goods and services? 
+
+2. What goods and services are to be included in the calculation? 
+(what about foreign companies in America, or American companies in 
+foreign nations, should their profits be included? 
+Are public parks and beaches included?)
+
+3. What about unmeasured goods and services?
+(drugs/prostitution/ illegally obtained goods obtained
+from web/foreign entities)
+
+4. What can and can't we use GDP to measure? 
+(certainly the answer relates to the goods and services a country produces,
+but can we use it to determine the level of happiness/standard of living 
+a country has? If not, is there a correlation between GDP and such measures?)
+
+5. What the heck do the other variables in this data set mean? 
+(GDP is by far the most well-known number)
+
+6. What does real mean in real GDP (RGDP)?
+
+7. What does PPP mean, and what are its variants? 
+
+
+```{r}
+
+# Filtering: Russian Federation Data
+russia.df <- pwt.billions %>% filter(country == "Russian Federation", year %in% 1990:2019) 
+russia.df
+
+# Creating time series objects (Note: I'm not familiar with time series analysis with R, 
+# so I'm just creating different objects, and exploring their utilities, but I'm going to
+# omit the code for extra stuff)
+
+russia.ts <- ts(data = russia.df, start = 1990, end = 2019)
+russia.xts <- as.xts(x = russia.ts)
+russia.zoo <- zoo(x = russia.ts)
+
+# Measures of GDP plot #
+
+# In creating this graphic, I decided to add the Presidents and the approximate time
+# they were put into office, along with two events I thought might have had a 
+# effect on GDP, namely, the Russian invasion of Crimea, and the 2008 Financial Crisis.
+ggplot(data = russia.df, aes(x = year)) + 
+  ylab("RGDP at chained PPPs (in bil. 2017US$)") + xlab("") +
+  ggtitle("A Russia timeline: Major Events and Measures of GDP") +
+  labs(caption = "Various measures of GDP  ") +
+  geom_line(aes(y = rgdpe, color = "cyan4")) +
+  geom_line(aes(y = rgdpo, color = "goldenrod")) +
+  geom_line(aes(y = cgdpe, color = "purple")) +
+  geom_line(aes(y = cgdpo, color = "darkgreen")) + 
+  geom_vline(xintercept = 1991, col = "grey") +
+  geom_text(aes(x = 1990.725, y = 3000, label = "Pres. Yeltsin: 1991-1999", angle = 90)) +
+  geom_vline(xintercept = 2000.6, col = "grey") +
+  geom_text(aes(x = 2000.3, y = 3000, label = "Pres. Putin: 2000-2008", angle = 90)) +
+  geom_vline(xintercept = 2008.6, col = "grey") +
+  geom_text(aes(x = 2008.35, y = 2500, label = "Pres. Medvedev: 2008-2012", angle = 90)) +
+  geom_vline(xintercept = 2012.6, col = "grey") +
+  geom_text(aes(x = 2012.25, y = 2500, label = "Pres. Putin: 2012-Present", angle = 90)) +
+  geom_vline(xintercept = 2014, color = "darkred") + 
+  geom_text(aes(x = 2013.75, y = 2500, label = "Russian annexation of Crimea: March 2014", angle = 90)) +
+  geom_vline(xintercept = 2008, col = "darkblue") +
+  geom_text(aes(x = 2007.75, y = 2500), label = "2007-2008 Financial Crisis", angle = 90) + 
+  scale_color_manual(labels = c("Real GDP:expenditure side", 
+                                   "Real GDP:output side", 
+                                "Current Price GDP:expenditure side",
+                                "Current Price GDP:output side"),
+                     values = c("goldenrod", "cyan4", "purple", "darkgreen"),
+                     aes(fill = "Measure of Real GDP")) +
+  theme(panel.background = element_rect(fill = "aliceblue", color = "white"),
+                      panel.grid.major = element_line(color = "white"),
+                      panel.grid.minor = element_line(color = "white"),
+        plot.margin = margin(20, 17,18,20),
+        plot.title = element_text(hjust = .5, family = "serif", size = 20),
+        axis.text.y = element_text(family = "serif", size = 12),
+        axis.text.x = element_text(family = "serif", size = 12),
+        axis.title.y = element_text(family = "serif", size = 15),
+        legend.position = c(.12, .91),
+        legend.box = "vertical",
+        legend.text = element_text(size = 10)) 
+# Dang this is a lot of code for this plot. No wonder people pay for 
+# people who can create dashboards 
+
+
+
+```
+
+                                      #Research Notes: 
+[1] - https://www.rug.nl/ggdc/docs/the_next_generation_of_the_penn_world_table2013.pdf
+
+
+[2] - https://www.nottingham.ac.uk/gep/documents/lectures/nottm-lectures-in-int-economics/2008/robert-feenstra-background3.pdf 
+This paper was created to provide clarification for real GDP on the output-side and real GDP on the expenditure side. 
+
+[3] - https://www.investopedia.com/updates/purchasing-power-parity-ppp/
+
+
+PWT allows comparison of GDP across countries by converting GDP at national prices to a common 
+currency (US dollars). The term "real" in multiple comparisons of GDP refers to the use of common 
+"reference" prices to add up across goods and obtain real GDP in different countries.
+When the calculation is made in two years, the values of real GDP obtained are not necessarily comparable
+because reference prices can change.[1]
+                                    
+Measures of Real GDP [1]
+1. Constant price real GDP on the expenditure and output sides (\(RGDP^e\) and \(RGDP^o\))
+2. Current price real GDP on the expenditure and output sides (\(CGDP^e\) and \(CGDP^o\))
+3. Constant price real GDP that uses national-accounts growth rates for GDP (\(RGDP^{NA}\))
+
+'Countries that have strong terms of trade - meaning a higher than average prices
+for exports or lower than average prices for imports - will have higher real\(GDP^e\)
+as a result' [1] 
+
+'it is shown that differences between real GDP measured from the expenditure-side and output-side can be 
+substantial, especially for small open economies' [2] 
+
+'real GDP is a measure of the wealth of nations, which indicates the amount of goods and services that are 
+available for consumption and investment' [2] 
+
+(talking about real GDP on the expenditure side and real GDP on the output side)
+'Essentially, these two concepts differ by the terms of trade in the economy, i.e. the
+prices at which goods are exported and imported' [2]
+
+PPP stands for Purchasing power parities
+
+'Purchasing power parity (PPP) is a popular metric used by macroeconomic analysts
+that compares different countries' currencies through a "basket of goods" approach.
+
+Purchasing power parity (PPP) allows for economists to compare economic productivity 
+and standards of living between countries
+
+Both the IMF and the Organization for Economic Cooperation and Development (OECD) uses
+weights based on PPP metrics to make predictions and recommend economic policy. The
+recommended economic policies can have an immediate short-term impact on financial
+markets.' [3]
+
+
+
+                                    # Alternative to tedious ggplotting: shinyApp 
+It seems like a lot of the plans of 'visual inspection' can be easily tackled with a shinyApp, that plots
+the time-series data, and allows the user to pick which country they want to look at, and what data they want to
+look at, and one more thing, let them pick if they want two variables 
+```{r}
+
+library(shiny)
+
+
+ui <- fluidPage(
+  fluidRow(
+    column(6, 
+           selectInput("country", "Country", choices = unique(pwt.billions$country))
+           ),
+    column(6, 
+           selectInput("variable", "Variable", choices = rev(colnames(pwt.billions)))
+           )
+  ),
+  fluidRow(
+    column(12, plotOutput("time_series"),
+    column(1, tableOutput("summary"))
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  selected <- reactive(pwt.billions %>% 
+                         select(year, country, input$variable) %>%
+                         filter(country == input$country) %>% drop_na())
+  
+variable <- reactive(input$variable)
+                       
+  output$summary <- renderTable(
+    selected()
+  )
+  
+  
+  output$time_series<- renderPlot({
+      selected() %>% ggplot(aes(x = year)) + 
+      geom_line(aes(y = get(input$variable))) + ylab(input$variable)
+  }, res = 96)
+  
+}  
+
+shinyApp(ui, server)  
+  
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
