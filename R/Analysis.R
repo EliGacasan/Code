@@ -23,7 +23,7 @@ con <- dbConnect(
   host = 'localhost',
   port = '5432',
   user = 'postgres',
-  password = 'Ghostrider12!!!'
+  password = '#############'
 )
 
 # List tables in my database 
